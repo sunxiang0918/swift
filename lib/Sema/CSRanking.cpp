@@ -419,7 +419,7 @@ static TypeBase* getTypeAtIndex(TypeBase* containerType, size_t index) {
 /// against a non-existential parameter at the same position of the first decl.
 /// This is used to disambiguate function overloads that would otherwise be
 /// identical after opening their parameter types.
-static bool hasEmptyExistenialParameterMismatch(ValueDecl *decl1,
+static bool hasEmptyExistentialParameterMismatch(ValueDecl *decl1,
                                                 ValueDecl *decl2) {
   
   auto func1 = dyn_cast<FuncDecl>(decl1);
@@ -484,7 +484,8 @@ static bool isProtocolExtensionAsSpecializedAs(TypeChecker &tc,
   ConstraintSystem cs(tc, dc1, None);
   llvm::DenseMap<CanType, TypeVariableType *> replacements;
   cs.openGeneric(dc2, sig2->getGenericParams(), sig2->getRequirements(),
-                 false, nullptr, ConstraintLocatorBuilder(nullptr),
+                 false, dc2->getGenericTypeContextDepth(),
+                 nullptr, ConstraintLocatorBuilder(nullptr),
                  replacements);
 
   // Bind the 'Self' type from the first extension to the type parameter from
@@ -608,14 +609,13 @@ static bool isDeclAsSpecializedAs(TypeChecker &tc, DeclContext *dc,
   // FIXME: Locator when anchored on a declaration.
   // Get the type of a reference to the second declaration.
   Type openedType2 = cs.openType(type2, locator,
-                                 decl2->getPotentialGenericDeclContext());
+                                 decl2->getInnermostDeclContext());
 
   // Get the type of a reference to the first declaration, swapping in
   // archetypes for the dependent types.
-  ArchetypeOpener opener(decl1->getPotentialGenericDeclContext());
+  ArchetypeOpener opener(decl1->getInnermostDeclContext());
   Type openedType1 = cs.openType(type1, locator,
-                                 decl1->getPotentialGenericDeclContext(),
-                                 /*skipProtocolSelfConstraint=*/false,
+                                 decl1->getInnermostDeclContext(),
                                  &opener);
 
   // Extract the self types from the declarations, if they have them.
@@ -922,11 +922,11 @@ ConstraintSystem::compareSolutions(ConstraintSystem &cs,
     // wise comparison between an empty existential collection and a non-
     // existential type.
     if (!(foundRefinement1 && foundRefinement2)) {
-      if (hasEmptyExistenialParameterMismatch(decl1, decl2)) {
+      if (hasEmptyExistentialParameterMismatch(decl1, decl2)) {
         foundRefinement1 = true;
       }
       
-      if (hasEmptyExistenialParameterMismatch(decl2, decl1)) {
+      if (hasEmptyExistentialParameterMismatch(decl2, decl1)) {
         foundRefinement2 = true;
       }
     }
@@ -1252,7 +1252,7 @@ ConstraintSystem::findBestSolution(SmallVectorImpl<Solution> &viable,
   return None;
 }
 
-SolutionDiff::SolutionDiff(ArrayRef<Solution> solutions)  {
+SolutionDiff::SolutionDiff(ArrayRef<Solution> solutions) {
   if (solutions.size() <= 1)
     return;
 

@@ -522,8 +522,11 @@ void Remangler::mangleFunctionSignatureSpecializationParam(Node *node) {
     }
     Out << '_';
     return;
-  case FunctionSigSpecializationParamKind::InOutToValue:
+  case FunctionSigSpecializationParamKind::BoxToValue:
     Out << "i_";
+    return;
+  case FunctionSigSpecializationParamKind::BoxToStack:
+    Out << "k_";
     return;
   default:
     if (kindValue &
@@ -1155,6 +1158,11 @@ void Remangler::mangleDynamicSelf(Node *node) {
 
 void Remangler::mangleErrorType(Node *node) {
   Out << "ERR";
+}
+
+void Remangler::mangleSILBoxType(Node *node) {
+  Out << 'X' << 'b';
+  mangleSingleChildNode(node);
 }
 
 void Remangler::mangleMetatype(Node *node) {

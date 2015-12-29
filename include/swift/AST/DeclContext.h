@@ -245,7 +245,7 @@ public:
   /// ClassDecl, otherwise return null.
   ClassDecl *isClassOrClassExtensionContext() const;
 
-  /// If this DeclContext is a enum, or an extension on a enum, return the
+  /// If this DeclContext is an enum, or an extension on an enum, return the
   /// EnumDecl, otherwise return null.
   EnumDecl *isEnumOrEnumExtensionContext() const;
 
@@ -359,6 +359,15 @@ public:
 
   /// Determine whether the innermost context is generic.
   bool isInnermostContextGeneric() const;
+  
+  /// Determine whether the innermost context is either a generic type context,
+  /// or a concrete type nested inside a generic type context.
+  bool isGenericTypeContext() const;
+
+  /// Determine the maximum depth of the current generic type context's generic
+  /// parameters. If the current context is not a generic type context, returns
+  /// the maximum depth of any generic parameter in this context.
+  unsigned getGenericTypeContextDepth() const;
 
   /// Returns true if lookups within this context could affect downstream files.
   ///

@@ -52,7 +52,7 @@ for x in s {
 }
 print(">")
 
-//===--- Avoid creating gratutitously self-destructive sequences ----------===//
+//===--- Avoid creating gratuitously self-destructive sequences ----------===//
 
 // In a naive implementation, mapping over a non-self-destructive
 // SequenceType having a reference-semantics GeneratorType produces a
@@ -65,7 +65,9 @@ print(">")
 // A GeneratorType with reference semantics
 class Counter : GeneratorType {
   func next() -> Int? {
-    return n < end ? n++ : nil
+    if n >= end { return nil }
+    n += 1
+    return n-1
   }
 
   init(_ n: Int, _ end: Int) {

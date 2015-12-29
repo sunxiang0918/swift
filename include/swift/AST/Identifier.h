@@ -18,12 +18,8 @@
 #define SWIFT_AST_IDENTIFIER_H
 
 #include "swift/Basic/LLVM.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/PointerUnion.h"
-#include "llvm/ADT/StringRef.h"
-#include <cstring>
 
 namespace llvm {
   class raw_ostream;
@@ -109,9 +105,6 @@ public:
   /// isOperatorContinuationCodePoint - Return true if the specified code point
   /// is a valid operator code point.
   static bool isOperatorContinuationCodePoint(uint32_t C) {
-    // '.' is a special case. It can only appear in '..'.
-    if (C == '.')
-      return false;
     if (isOperatorStartCodePoint(C))
       return true;
 
@@ -258,7 +251,7 @@ public:
   DeclName(ASTContext &C, Identifier baseName,
            ArrayRef<Identifier> argumentNames);
   
-  /// Retrive the 'base' name, i.e., the name that follows the introducer,
+  /// Retrieve the 'base' name, i.e., the name that follows the introducer,
   /// such as the 'foo' in 'func foo(x:Int, y:Int)' or the 'bar' in
   /// 'var bar: Int'.
   Identifier getBaseName() const {

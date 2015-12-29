@@ -25,7 +25,7 @@ using namespace swift;
 llvm::raw_ostream &swift::operator<<(llvm::raw_ostream &OS, PatternKind kind) {
   switch (kind) {
   case PatternKind::Paren:
-    return OS << "parethesized pattern";
+    return OS << "parenthesized pattern";
   case PatternKind::Tuple:
     return OS << "tuple pattern";
   case PatternKind::Named:
@@ -744,7 +744,7 @@ SourceLoc TuplePattern::getAnyEllipsisLoc() const {
 
 SourceRange TypedPattern::getSourceRange() const {
   if (isImplicit()) {
-    // If a TypedPattern is implicit, then its type is definitely implicit, se
+    // If a TypedPattern is implicit, then its type is definitely implicit, so
     // we should ignore its location.  On the other hand, the sub-pattern can
     // be explicit or implicit.
     return SubPattern->getSourceRange();

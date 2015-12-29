@@ -446,7 +446,7 @@ static void bindAllGenericParameters(Mangler &mangler,
 }
 
 void Mangler::mangleTypeForDebugger(Type Ty, const DeclContext *DC) {
-  assert(DWARFMangling && "DWARFMangling expected whn mangling for debugger");
+  assert(DWARFMangling && "DWARFMangling expected when mangling for debugger");
 
   // Polymorphic function types carry their own generic parameters and
   // manglePolymorphicType will bind them.
@@ -881,6 +881,7 @@ void Mangler::mangleAssociatedTypeName(DependentMemberType *dmt,
 /// <type> ::= Xo <type>             # unowned reference type
 /// <type> ::= Xw <type>             # weak reference type
 /// <type> ::= XF <impl-function-type> # SIL function type
+/// <type> ::= Xb <type>             # SIL @box type
 ///
 /// <index> ::= _                    # 0
 /// <index> ::= <natural> _          # N+1
@@ -1108,6 +1109,7 @@ void Mangler::mangleType(Type type, ResilienceExpansion explosion,
     // <impl-convention> ::= 'e'                      // direct, deallocating
     // <impl-convention> ::= 'i'                      // indirect, ownership transfer
     // <impl-convention> ::= 'l'                      // indirect, inout
+    // <impl-convention> ::= 'L'                      // indirect, inout, aliasable
     // <impl-convention> ::= 'g'                      // direct, guaranteed
     // <impl-convention> ::= 'G'                      // indirect, guaranteed
     // <impl-convention> ::= 'z' <impl-convention>    // error result
@@ -1129,6 +1131,7 @@ void Mangler::mangleType(Type type, ResilienceExpansion explosion,
       case ParameterConvention::Indirect_In: return 'i';
       case ParameterConvention::Indirect_Out: return 'i';
       case ParameterConvention::Indirect_Inout: return 'l';
+      case ParameterConvention::Indirect_InoutAliasable: return 'L';
       case ParameterConvention::Indirect_In_Guaranteed: return 'G';
       case ParameterConvention::Direct_Owned: return 'o';
       case ParameterConvention::Direct_Unowned: return 'd';
@@ -1276,19 +1279,24 @@ void Mangler::mangleType(Type type, ResilienceExpansion explosion,
 
     if (DWARFMangling) {
       Buffer << 'q' << Index(info.Index);
-      // The DWARF output created by Swift is intentionally flat,
-      // therefore archetypes are emitted with their DeclContext if
-      // they appear at the top level of a type (_Tt).
-      // Clone a new, non-DWARF Mangler for the DeclContext.
-      Mangler ContextMangler(Buffer, /*DWARFMangling=*/false);
-      SmallVector<const void *, 4> SortedSubsts(Substitutions.size());
-      for (auto S : Substitutions) SortedSubsts[S.second] = S.first;
-      for (auto S : SortedSubsts) ContextMangler.addSubstitution(S);
-      for (; relativeDepth > 0; --relativeDepth)
-        DC = DC->getParent();
-      assert(DC && "no decl context for archetype found");
-      if (!DC) return;
-      ContextMangler.mangleContext(DC, BindGenerics::None);
+
+      {
+        // The DWARF output created by Swift is intentionally flat,
+        // therefore archetypes are emitted with their DeclContext if
+        // they appear at the top level of a type (_Tt).
+        // Clone a new, non-DWARF Mangler for the DeclContext.
+        Mangler ContextMangler(/*DWARFMangling=*/false);
+        SmallVector<const void *, 4> SortedSubsts(Substitutions.size());
+        for (auto S : Substitutions) SortedSubsts[S.second] = S.first;
+        for (auto S : SortedSubsts) ContextMangler.addSubstitution(S);
+        for (; relativeDepth > 0; --relativeDepth)
+          DC = DC->getParent();
+        assert(DC && "no decl context for archetype found");
+        if (!DC) return;
+        ContextMangler.mangleContext(DC, BindGenerics::None);
+        ContextMangler.finalize(Buffer);
+      }
+
     } else {
       if (relativeDepth != 0) {
         Buffer << 'd' << Index(relativeDepth - 1);
@@ -1392,6 +1400,11 @@ void Mangler::mangleType(Type type, ResilienceExpansion explosion,
   }
 
   case TypeKind::SILBox:
+    Buffer << 'X' << 'b';
+    mangleType(cast<SILBoxType>(tybase)->getBoxedType(), explosion,
+               uncurryLevel);
+    return;
+
   case TypeKind::SILBlockStorage:
     llvm_unreachable("should never be mangled");
   }
@@ -1820,6 +1833,18 @@ void Mangler::mangleTypeMetadataFull(CanType ty, bool isPattern) {
   if (isPattern)
     Buffer << 'P';
   mangleType(ty, ResilienceExpansion::Minimal, 0);
+}
+
+void Mangler::append(StringRef S) {
+  Buffer << S;
+}
+
+void Mangler::append(char C) {
+  Buffer << C;
+}
+
+void Mangler::mangleNatural(const APInt &Nat) {
+  Buffer << Nat;
 }
 
 void Mangler::mangleGlobalVariableFull(const VarDecl *decl) {

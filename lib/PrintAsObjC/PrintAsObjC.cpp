@@ -73,8 +73,7 @@ namespace {
 
 static Identifier getNameForObjC(const NominalTypeDecl *NTD,
                                  CustomNamesOnly_t customNamesOnly = Normal) {
-  // FIXME: Should we support renaming for enums too?
-  assert(isa<ClassDecl>(NTD) || isa<ProtocolDecl>(NTD));
+  assert(isa<ClassDecl>(NTD) || isa<ProtocolDecl>(NTD) || isa<EnumDecl>(NTD));
   if (auto objc = NTD->getAttrs().getAttribute<ObjCAttr>()) {
     if (auto name = objc->getName()) {
       assert(name->getNumSelectorPieces() == 1);
@@ -235,16 +234,33 @@ private:
   
   void visitEnumDecl(EnumDecl *ED) {
     printDocumentationComment(ED);
-    llvm::SmallString<32> scratch;
-    os << "typedef SWIFT_ENUM(";
+    os << "typedef ";
+    Identifier customName = getNameForObjC(ED, CustomNamesOnly);
+    if (customName.empty()) {
+      os << "SWIFT_ENUM(";
+    } else {
+      os << "SWIFT_ENUM_NAMED(";
+    }
     print(ED->getRawType(), OTK_None);
-    os << ", " << ED->getName() << ") {\n";
+    if (customName.empty()) {
+      os << ", " << ED->getName();
+    } else {
+      os << ", " << customName
+         << ", \"" << ED->getName() << "\"";
+    }
+    os << ") {\n";
     for (auto Elt : ED->getAllElements()) {
       printDocumentationComment(Elt);
 
       // Print the cases as the concatenation of the enum name with the case
       // name.
-      os << "  " << ED->getName() << Elt->getName();
+      os << "  ";
+      if (customName.empty()) {
+        os << ED->getName();
+      } else {
+        os << customName;
+      }
+      os << Elt->getName();
       
       if (auto ILE = cast_or_null<IntegerLiteralExpr>(Elt->getRawValueExpr())) {
         os << " = ";
@@ -655,23 +671,35 @@ private:
     if (!kind)
       return;
 
-    if (printKind == NullabilityPrintKind::After)
+    switch (printKind) {
+    case NullabilityPrintKind::ContextSensitive:
+      switch (*kind) {
+      case OTK_None:
+        os << "nonnull";
+        break;
+      case OTK_Optional:
+        os << "nullable";
+        break;
+      case OTK_ImplicitlyUnwrappedOptional:
+        os << "null_unspecified";
+        break;
+      }
+      break;
+    case NullabilityPrintKind::After:
       os << ' ';
-
-    if (printKind != NullabilityPrintKind::ContextSensitive)
-      os << "__";
-
-    switch (*kind) {
-    case OTK_None:
-      os << "nonnull";
-      break;
-
-    case OTK_Optional:
-      os << "nullable";
-      break;
-
-    case OTK_ImplicitlyUnwrappedOptional:
-      os << "null_unspecified";
+      [[clang::fallthrough]];
+    case NullabilityPrintKind::Before:
+      switch (*kind) {
+      case OTK_None:
+        os << "_Nonnull";
+        break;
+      case OTK_Optional:
+        os << "_Nullable";
+        break;
+      case OTK_ImplicitlyUnwrappedOptional:
+        os << "_Null_unspecified";
+        break;
+      }
       break;
     }
 
@@ -805,7 +833,7 @@ private:
       auto *clangTypeDecl = cast<clang::TypeDecl>(alias->getClangDecl());
       os << clangTypeDecl->getName();
 
-      // Print proper nullability for CF types, but __null_unspecified for
+      // Print proper nullability for CF types, but _Null_unspecified for
       // all other non-object Clang pointer types.
       if (aliasTy->hasReferenceSemantics() ||
           isClangObjectPointerType(clangTypeDecl)) {
@@ -1527,7 +1555,7 @@ public:
         return elem->getName().str() == "Domain";
       });
       if (!hasDomainCase) {
-        os << "static NSString * __nonnull const " << ED->getName()
+        os << "static NSString * _Nonnull const " << ED->getName()
            << "Domain = @\"" << M.getName() << "." << ED->getName() << "\";\n";
       }
     }
@@ -1602,7 +1630,7 @@ public:
            "#endif\n"
            "#if !defined(SWIFT_CLASS)\n"
            "# if defined(__has_attribute) && "
-             "__has_attribute(objc_subclassing_restricted) \n"
+             "__has_attribute(objc_subclassing_restricted)\n"
            "#  define SWIFT_CLASS(SWIFT_NAME) SWIFT_RUNTIME_NAME(SWIFT_NAME) "
              "__attribute__((objc_subclassing_restricted)) "
              "SWIFT_CLASS_EXTRA\n"
@@ -1644,6 +1672,15 @@ public:
            "# define SWIFT_ENUM(_type, _name) "
              "enum _name : _type _name; "
              "enum SWIFT_ENUM_EXTRA _name : _type\n"
+           "# if defined(__has_feature) && "
+             "__has_feature(generalized_swift_name)\n"
+           "#  define SWIFT_ENUM_NAMED(_type, _name, SWIFT_NAME) "
+             "enum _name : _type _name SWIFT_COMPILE_NAME(SWIFT_NAME); "
+             "enum SWIFT_COMPILE_NAME(SWIFT_NAME) SWIFT_ENUM_EXTRA _name : _type\n"
+           "# else\n"
+           "#  define SWIFT_ENUM_NAMED(_type, _name, SWIFT_NAME) "
+             "SWIFT_ENUM(_type, _name)\n"
+           "# endif\n"
            "#endif\n"
            ;
     static_assert(SWIFT_MAX_IMPORTED_SIMD_ELEMENTS == 4,

@@ -22,7 +22,7 @@ template class llvm::DominatorTreeBase<SILBasicBlock>;
 template class llvm::DominatorBase<SILBasicBlock>;
 template class llvm::DomTreeNodeBase<SILBasicBlock>;
 
-/// Compute the immmediate-dominators map.
+/// Compute the immediate-dominators map.
 DominanceInfo::DominanceInfo(SILFunction *F)
     : DominatorTreeBase(/*isPostDom*/ false) {
       assert(!F->isExternalDeclaration() &&
@@ -55,7 +55,7 @@ void DominanceInfo::verify() const {
   DominanceInfo OtherDT(F);
 
   // And compare.
-  if (errorOccuredOnComparison(OtherDT)) {
+  if (errorOccurredOnComparison(OtherDT)) {
     llvm::errs() << "DominatorTree is not up to date!\nComputed:\n";
     print(llvm::errs());
     llvm::errs() << "\nActual:\n";
@@ -64,11 +64,11 @@ void DominanceInfo::verify() const {
   }
 }
 
-/// Compute the immmediate-post-dominators map.
+/// Compute the immediate-post-dominators map.
 PostDominanceInfo::PostDominanceInfo(SILFunction *F)
   : DominatorTreeBase(/*isPostDom*/ true) {
   assert(!F->isExternalDeclaration() &&
-         "Can not construct a post dominator tree for a declaration");
+         "Cannot construct a post dominator tree for a declaration");
   recalculate(*F);
 }
 
@@ -102,7 +102,7 @@ void PostDominanceInfo::verify() const {
   PostDominanceInfo OtherDT(F);
 
   // And compare.
-  if (errorOccuredOnComparison(OtherDT)) {
+  if (errorOccurredOnComparison(OtherDT)) {
     llvm::errs() << "PostDominatorTree is not up to date!\nComputed:\n";
     print(llvm::errs());
     llvm::errs() << "\nActual:\n";

@@ -12,7 +12,7 @@
 
 import SwiftShims
 
-/// Convert the given numeric value to a hexidecimal string.
+/// Convert the given numeric value to a hexadecimal string.
 public func asHex<T : IntegerType>(x: T) -> String {
   return "0x" + String(x.toIntMax(), radix: 16)
 }
@@ -43,7 +43,7 @@ public func scan<
 
 public func randomShuffle<T>(a: [T]) -> [T] {
   var result = a
-  for var i = a.count - 1; i != 0; --i {
+  for i in (1..<a.count).reverse() {
     // FIXME: 32 bits are not enough in general case!
     let j = Int(rand32(exclusiveUpperBound: UInt32(i + 1)))
     if i != j {

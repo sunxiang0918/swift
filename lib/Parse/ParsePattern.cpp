@@ -119,11 +119,12 @@ static bool startsParameterName(Parser &parser, bool isClosure) {
     return true;
 
   // To have a parameter name here, we need a name.
-  if (!parser.Tok.is(tok::identifier))
+  if (!parser.Tok.canBeArgumentLabel())
     return false;
 
-  // If the next token is another identifier, '_', or ':', this is a name.
-  if (parser.peekToken().isAny(tok::identifier, tok::kw__, tok::colon))
+  // If the next token can be an argument label or is ':', this is a name.
+  const auto &nextTok = parser.peekToken();
+  if (nextTok.is(tok::colon) || nextTok.canBeArgumentLabel())
     return true;
 
   // The identifier could be a name or it could be a type. In a closure, we
@@ -179,15 +180,15 @@ Parser::parseParameterClause(SourceLoc &leftParenLoc,
       param.LetVarInOutLoc = consumeToken();
       param.SpecifierKind = ParsedParameter::InOut;
     } else if (Tok.is(tok::kw_let)) {
-      diagnose(Tok.getLoc(), diag::let_on_param_is_redundant,
+      diagnose(Tok.getLoc(), diag::var_not_allowed_in_pattern,
                Tok.is(tok::kw_let)).fixItRemove(Tok.getLoc());
       param.LetVarInOutLoc = consumeToken();
       param.SpecifierKind = ParsedParameter::Let;
     } else if (Tok.is(tok::kw_var)) {
-      diagnose(Tok.getLoc(), diag::var_not_allowed_in_pattern)
-        .fixItRemove(Tok.getLoc());
+      diagnose(Tok.getLoc(), diag::var_not_allowed_in_pattern,
+               Tok.is(tok::kw_let)).fixItRemove(Tok.getLoc());
       param.LetVarInOutLoc = consumeToken();
-      param.SpecifierKind = ParsedParameter::Let;
+      param.SpecifierKind = ParsedParameter::Var;
     }
 
     // Redundant specifiers are fairly common, recognize, reject, and recover
@@ -204,11 +205,20 @@ Parser::parseParameterClause(SourceLoc &leftParenLoc,
 
     if (param.PoundLoc.isValid() || startsParameterName(*this, isClosure)) {
       // identifier-or-none for the first name
-      if (Tok.is(tok::identifier)) {
+      if (Tok.is(tok::kw__)) {
+        // A back-tick cannot precede an empty name marker.
+        if (param.PoundLoc.isValid()) {
+          diagnose(Tok, diag::parameter_backtick_empty_name)
+          .fixItRemove(param.PoundLoc);
+          param.PoundLoc = SourceLoc();
+        }
+
+        param.FirstNameLoc = consumeToken();
+      } else if (Tok.canBeArgumentLabel()) {
         param.FirstName = Context.getIdentifier(Tok.getText());
         param.FirstNameLoc = consumeToken();
 
-        // Operators can not have API names.
+        // Operators cannot have API names.
         if (paramContext == ParameterContextKind::Operator &&
             param.PoundLoc.isValid()) {
           diagnose(param.PoundLoc, 
@@ -216,15 +226,6 @@ Parser::parseParameterClause(SourceLoc &leftParenLoc,
             .fixItRemove(param.PoundLoc);
           param.PoundLoc = SourceLoc();
         }
-      } else if (Tok.is(tok::kw__)) {
-        // A back-tick cannot precede an empty name marker.
-        if (param.PoundLoc.isValid()) {
-          diagnose(Tok, diag::parameter_backtick_empty_name)
-            .fixItRemove(param.PoundLoc);
-          param.PoundLoc = SourceLoc();
-        }
-
-        param.FirstNameLoc = consumeToken();
       } else {
         assert(param.PoundLoc.isValid() && "startsParameterName() lied");
         diagnose(Tok, diag::parameter_backtick_missing_name);
@@ -233,14 +234,14 @@ Parser::parseParameterClause(SourceLoc &leftParenLoc,
       }
 
       // identifier-or-none? for the second name
-      if (Tok.is(tok::identifier)) {
-        param.SecondName = Context.getIdentifier(Tok.getText());
-        param.SecondNameLoc = consumeToken();
-      } else if (Tok.is(tok::kw__)) {
+      if (Tok.canBeArgumentLabel()) {
+        if (!Tok.is(tok::kw__))
+          param.SecondName = Context.getIdentifier(Tok.getText());
+
         param.SecondNameLoc = consumeToken();
       }
 
-      // Operators can not have API names.
+      // Operators cannot have API names.
       if (paramContext == ParameterContextKind::Operator &&
           !param.FirstName.empty() &&
           param.SecondNameLoc.isValid()) {
@@ -466,7 +467,7 @@ mapParsedParameters(Parser &parser,
       if (isKeywordArgumentByDefault || param.PoundLoc.isValid()) {
         argName = param.FirstName;
 
-        // THe pound is going away. Complain.
+        // The pound is going away. Complain.
         if (param.PoundLoc.isValid()) {
           if (isKeywordArgumentByDefault) {
             parser.diagnose(param.PoundLoc, diag::parameter_extraneous_pound,
@@ -855,8 +856,8 @@ ParserResult<Pattern> Parser::parsePattern() {
     } else {
       // In an always immutable context, `var` is not allowed.
       if (alwaysImmutable)
-        diagnose(varLoc, diag::var_not_allowed_in_pattern)
-          .fixItRemove(varLoc);
+        diagnose(varLoc, diag::var_not_allowed_in_pattern, isLetKeyword)
+        .fixItRemove(varLoc);
     }
     
     // In our recursive parse, remember that we're in a var/let pattern.
@@ -1014,7 +1015,7 @@ ParserResult<Pattern> Parser::parseMatchingPattern(bool isExprBasic) {
   // TODO: Since we expect a pattern in this position, we should optimistically
   // parse pattern nodes for productions shared by pattern and expression
   // grammar. For short-term ease of initial implementation, we always go
-  // through the expr parser for ambiguious productions.
+  // through the expr parser for ambiguous productions.
 
   // Parse productions that can only be patterns.
   if (Tok.isAny(tok::kw_var, tok::kw_let)) {
@@ -1067,7 +1068,7 @@ ParserResult<Pattern> Parser::parseMatchingPatternAsLetOrVar(bool isLet,
     diagnose(varLoc, diag::let_pattern_in_immutable_context);
 
   if (!isLet && InVarOrLetPattern == IVOLP_AlwaysImmutable)
-    diagnose(varLoc, diag::var_not_allowed_in_pattern)
+    diagnose(varLoc, diag::var_not_allowed_in_pattern, isLet)
       .fixItReplace(varLoc, "let");
 
   // In our recursive parse, remember that we're in a var/let pattern.

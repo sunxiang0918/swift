@@ -341,7 +341,7 @@ private:
   template <typename T, typename ...Args>
   T *createDecl(Args &&... args);
 
-  /// Constructs an new module and validates it.
+  /// Constructs a new module and validates it.
   ModuleFile(std::unique_ptr<llvm::MemoryBuffer> moduleInputBuffer,
              std::unique_ptr<llvm::MemoryBuffer> moduleDocInputBuffer,
              bool isFramework, serialization::ExtendedValidationInfo *extInfo);
@@ -519,7 +519,7 @@ public:
   /// Note that this may cause other decls to load as well.
   void loadExtensions(NominalTypeDecl *nominal);
 
-  /// \brief Load the methods within the given class that that produce
+  /// \brief Load the methods within the given class that produce
   /// Objective-C class or instance methods with the given selector.
   ///
   /// \param classDecl The class in which we are searching for @objc methods.
@@ -589,8 +589,7 @@ public:
   void verify() const;
 
   virtual void loadAllMembers(Decl *D,
-                              uint64_t contextData,
-                              bool *ignored) override;
+                              uint64_t contextData) override;
 
   virtual void
   loadAllConformances(const Decl *D, uint64_t contextData,

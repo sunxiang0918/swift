@@ -17,29 +17,14 @@
 #ifndef SWIFT_DECL_H
 #define SWIFT_DECL_H
 
-#include "swift/AST/Attr.h"
 #include "swift/AST/CaptureInfo.h"
-#include "swift/AST/DeclContext.h"
 #include "swift/AST/DefaultArgumentKind.h"
 #include "swift/AST/GenericSignature.h"
-#include "swift/AST/KnownProtocols.h"
-#include "swift/AST/Identifier.h"
 #include "swift/AST/LazyResolver.h"
-#include "swift/AST/Requirement.h"
-#include "swift/AST/Substitution.h"
-#include "swift/AST/Type.h"
-#include "swift/AST/TypeLoc.h"
 #include "swift/Basic/OptionalEnum.h"
 #include "swift/Basic/Range.h"
-#include "swift/Basic/SourceLoc.h"
-#include "swift/Basic/STLExtras.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/Hashing.h"
-#include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include <cstddef>
 
 namespace clang {
   class Decl;
@@ -209,7 +194,7 @@ enum class CircularityCheck {
   Checked
 };
 
-/// Keeps track of whrther a given class inherits initializers from its
+/// Keeps track of whether a given class inherits initializers from its
 /// superclass.
 enum class StoredInheritsSuperclassInits {
   /// We have not yet checked.
@@ -573,8 +558,11 @@ class alignas(1 << DeclAlignInBits) Decl {
     unsigned : NumTypeDeclBits;
 
     unsigned Recursive : 1;
+
+    /// Whether or not this declaration is currently being type-checked.
+    unsigned BeingTypeChecked : 1;
   };
-  enum { NumAssociatedTypeDeclBits = NumTypeDeclBits + 1 };
+  enum { NumAssociatedTypeDeclBits = NumTypeDeclBits + 2 };
   static_assert(NumAssociatedTypeDeclBits <= 32, "fits in an unsigned");
 
   class ImportDeclBitfields {
@@ -1556,7 +1544,7 @@ public:
 
   /// Returns the most appropriate import kind for the given list of decls.
   ///
-  /// If the list is non-homogenous, or if there is more than one decl that
+  /// If the list is non-homogeneous, or if there is more than one decl that
   /// cannot be overloaded, returns None.
   static Optional<ImportKind> findBestImportKind(ArrayRef<ValueDecl *> Decls);
 
@@ -2239,16 +2227,6 @@ public:
   /// If \p DC is null, returns true only if this declaration is public.
   bool isAccessibleFrom(const DeclContext *DC) const;
 
-  /// Get the innermost declaration context that can provide generic
-  /// parameters used within this declaration.
-  DeclContext *getPotentialGenericDeclContext();
-
-  /// Get the innermost declaration context that can provide generic
-  /// parameters used within this declaration.
-  const DeclContext *getPotentialGenericDeclContext() const {
-    return const_cast<ValueDecl *>(this)->getPotentialGenericDeclContext();
-  }
-
   /// Retrieve the "interface" type of this value, which is the type used when
   /// the declaration is viewed from the outside. For a generic function,
   /// this will have generic function type using generic parameters rather than
@@ -2605,6 +2583,14 @@ public:
   void setIsRecursive() { AssociatedTypeDeclBits.Recursive = true; }
   bool isRecursive() { return AssociatedTypeDeclBits.Recursive; }
 
+  /// Whether the declaration is currently being validated.
+  bool isBeingTypeChecked() { return AssociatedTypeDeclBits.BeingTypeChecked; }
+
+  /// Toggle whether or not the declaration is being validated.
+  void setIsBeingTypeChecked(bool ibt = true) {
+    AssociatedTypeDeclBits.BeingTypeChecked = ibt;
+  }
+
   static bool classof(const Decl *D) {
     return D->getKind() == DeclKind::AssociatedType;
   }
@@ -2797,7 +2783,7 @@ public:
     return ValidatingGenericSignature;
   }
   
-  /// \brief Returns true if this this decl contains delayed value or protocol
+  /// \brief Returns true if this decl contains delayed value or protocol
   /// declarations.
   bool hasDelayedMembers() const {
     return NominalTypeDeclBits.HasDelayedMembers;
@@ -2859,9 +2845,6 @@ public:
   GenericSignature *getGenericSignature() const {
     return GenericSig;
   }
-
-  /// Mark generic type signature as invalid.
-  void markInvalidGenericSignature();
 
   /// getDeclaredType - Retrieve the type declared by this entity.
   Type getDeclaredType() const { return DeclaredTy; }
@@ -3263,17 +3246,19 @@ public:
     return ClassDeclBits.Foreign;
   }
   void setForeign(bool isForeign = true) {
-    ClassDeclBits.Foreign = true;
+    ClassDeclBits.Foreign = isForeign;
   }
 
   /// Find a method of a class that overrides a given method.
   /// Return nullptr, if no such method exists.
-  FuncDecl *findOverridingDecl(const FuncDecl *method) const;
+  AbstractFunctionDecl *findOverridingDecl(
+      const AbstractFunctionDecl *method) const;
 
   /// Find a method implementation which will be used when a given method
   /// is invoked on an instance of this class. This implementation may stem
   /// either from a class itself or its direct or indirect superclasses.
-  FuncDecl *findImplementingMethod(const FuncDecl *method) const;
+  AbstractFunctionDecl *findImplementingMethod(
+      const AbstractFunctionDecl *method) const;
 
   /// True if the class has a destructor.
   ///
@@ -3947,7 +3932,7 @@ public:
     return getAddressorInfo().MutableAddress;
   }
 
-  /// \brief Return the approproiate addressor for the given access kind.
+  /// \brief Return the appropriate addressor for the given access kind.
   FuncDecl *getAddressorForAccess(AccessKind accessKind) const {
     if (accessKind == AccessKind::Read)
       return getAddressor();
@@ -4075,9 +4060,9 @@ public:
     ParentPattern = PBD;
   }
   
-  /// Return the Pattern involved in initializing this VarDecl.  Recall that the
-  /// Pattern may be involved in initializing more than just this one vardecl
-  /// though.  For example, if this is a VarDecl for "x", the pattern may be
+  /// Return the Pattern involved in initializing this VarDecl.  However, recall that 
+  /// the Pattern may be involved in initializing more than just this one vardecl.
+  /// For example, if this is a VarDecl for "x", the pattern may be
   /// "(x, y)" and the initializer on the PatternBindingDecl may be "(1,2)" or
   /// "foo()".
   ///
@@ -4095,7 +4080,7 @@ public:
     ParentPattern = S;
   }
 
-  /// Return the initializer involved in this VarDecl.  However, Recall that the
+  /// Return the initializer involved in this VarDecl.  Recall that the
   /// initializer may be involved in initializing more than just this one
   /// vardecl though.  For example, if this is a VarDecl for "x", the pattern
   /// may be "(x, y)" and the initializer on the PatternBindingDecl may be
@@ -4180,7 +4165,7 @@ public:
   ParamDecl(bool isLet, SourceLoc argumentNameLoc, 
             Identifier argumentName, SourceLoc parameterNameLoc,
             Identifier parameterName, Type ty, DeclContext *dc)
-    : VarDecl(DeclKind::Param, /*IsState=*/false, isLet, parameterNameLoc, 
+    : VarDecl(DeclKind::Param, /*IsStatic=*/false, isLet, parameterNameLoc, 
               parameterName, ty, dc),
       ArgumentName(argumentName), ArgumentNameLoc(argumentNameLoc) { }
 
@@ -4358,6 +4343,7 @@ protected:
   };
 
   GenericParamList *GenericParams;
+  GenericSignature *GenericSig;
 
   CaptureInfo Captures;
 
@@ -4366,7 +4352,7 @@ protected:
                        GenericParamList *GenericParams)
       : ValueDecl(Kind, Parent, Name, NameLoc),
         DeclContext(DeclContextKind::AbstractFunctionDecl, Parent),
-        Body(nullptr), GenericParams(nullptr) {
+        Body(nullptr), GenericParams(nullptr), GenericSig(nullptr) {
     setBodyKind(BodyKind::None);
     setGenericParams(GenericParams);
     AbstractFunctionDeclBits.NumParamPatterns = NumParamPatterns;
@@ -4383,6 +4369,17 @@ protected:
   }
 
   void setGenericParams(GenericParamList *GenericParams);
+  
+public:
+  void setGenericSignature(GenericSignature *GenericSig) {
+    assert(!this->GenericSig && "already have signature?");
+    this->GenericSig = GenericSig;
+  }
+  
+  GenericSignature *getGenericSignature() const {
+    return GenericSig;
+  }
+
 public:
   // FIXME: Hack that provides names with keyword arguments for accessors.
   DeclName getEffectiveFullName() const;
@@ -4418,14 +4415,14 @@ public:
   }
   void setBody(BraceStmt *S, BodyKind NewBodyKind = BodyKind::Parsed) {
     assert(getBodyKind() != BodyKind::Skipped &&
-           "can not set a body if it was skipped");
+           "cannot set a body if it was skipped");
 
     Body = S;
     setBodyKind(NewBodyKind);
   }
 
   /// \brief Note that the body was skipped for this function.  Function body
-  /// can not be attached after this call.
+  /// cannot be attached after this call.
   void setBodySkipped(SourceRange bodyRange) {
     assert(getBodyKind() == BodyKind::None);
     BodyRange = bodyRange;
@@ -4546,11 +4543,7 @@ public:
   /// and return the type to be used for the 'self' argument of the type, or an
   /// empty Type() if no 'self' argument should exist.  This can
   /// only be used after name binding has resolved types.
-  ///
-  /// \param outerGenericParams If non-NULL, and this function is an instance
-  /// of a generic type, will be set to the generic parameter list of that
-  /// generic type.
-  Type computeSelfType(GenericParamList **outerGenericParams = nullptr);
+  Type computeSelfType();
 
   /// \brief If this is a method in a type or extension thereof, compute
   /// and return the type to be used for the 'self' argument of the interface
@@ -4578,6 +4571,10 @@ public:
 
   /// Retrieve the declaration that this method overrides, if any.
   AbstractFunctionDecl *getOverriddenDecl() const;
+
+  /// Returns true if a function declaration overrides a given
+  /// method from its direct or indirect superclass.
+  bool isOverridingDecl(const AbstractFunctionDecl *method) const;
 
   /// Whether the declaration is later overridden in the module
   ///
@@ -4627,7 +4624,7 @@ class FuncDecl : public AbstractFunctionDecl {
   SourceLoc StaticLoc;  // Location of the 'static' token or invalid.
   SourceLoc FuncLoc;    // Location of the 'func' token.
   SourceLoc ThrowsLoc;  // Location of the 'throws' token.
-  SourceLoc AccessorKeywordLoc; // Location of the accessor keyword token, e,g. 'set'.
+  SourceLoc AccessorKeywordLoc; // Location of the accessor keyword, e.g. 'set'.
 
   TypeLoc FnRetType;
 
@@ -4646,7 +4643,8 @@ class FuncDecl : public AbstractFunctionDecl {
   /// which property and what kind of accessor.
   llvm::PointerIntPair<AbstractStorageDecl*, 3, AccessorKind> AccessorDecl;
   llvm::PointerUnion<FuncDecl *, NominalTypeDecl*> OverriddenOrDerivedForDecl;
-  llvm::PointerIntPair<OperatorDecl *, 3, AddressorKind> OperatorAndAddressorKind;
+  llvm::PointerIntPair<OperatorDecl *, 3,
+                       AddressorKind> OperatorAndAddressorKind;
 
   FuncDecl(SourceLoc StaticLoc, StaticSpellingKind StaticSpelling,
            SourceLoc FuncLoc, DeclName Name,
@@ -4918,10 +4916,6 @@ public:
     FuncDeclBits.ForcedStaticDispatch = flag;
   }
 
-  /// Returns true if a function declaration overrides a given
-  /// method from its direct or indirect superclass.
-  bool isOverridingDecl(const FuncDecl *method) const;
-  
   static bool classof(const Decl *D) { return D->getKind() == DeclKind::Func; }
   static bool classof(const AbstractFunctionDecl *D) {
     return classof(static_cast<const Decl*>(D));

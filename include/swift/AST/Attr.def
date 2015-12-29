@@ -45,6 +45,7 @@ TYPE_ATTR(error)
 TYPE_ATTR(out)
 TYPE_ATTR(in)
 TYPE_ATTR(inout)
+TYPE_ATTR(inout_aliasable)
 TYPE_ATTR(in_guaranteed)
 TYPE_ATTR(noescape)  // Only valid in sil mode.
 TYPE_ATTR(owned)
@@ -238,6 +239,8 @@ SIMPLE_DECL_ATTR(indirect, Indirect,
 
 SIMPLE_DECL_ATTR(warn_unqualified_access, WarnUnqualifiedAccess,
                  OnFunc /*| OnVar*/ | LongAttribute, 61)
+
+DECL_ATTR(_migration_id, MigrationId, OnAnyDecl, 62)
 
 #undef TYPE_ATTR
 #undef DECL_ATTR_ALIAS

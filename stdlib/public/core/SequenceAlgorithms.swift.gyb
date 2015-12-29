@@ -53,7 +53,7 @@ extension SequenceType {
 if preds:
   orderingRequirement = """
   /// - Requires: `isOrderedBefore` is a
-  ///   [strict weak ordering](http://en.wikipedia.org/wiki/Strict_weak_order#Strict_weak_orderings).
+  ///   [strict weak ordering](http://en.wikipedia.org/wiki/Strict_weak_order#Strict_weak_orderings)
   ///   over `self`."""
   rethrows_ = "rethrows "
 else:
@@ -285,7 +285,7 @@ else:
           if ${"try isOrderedBefore(e2, e1)" if preds else "e2 < e1"} {
             return false
           }
-          continue // equivalent
+          continue // Equivalent
         }
         return false
       }

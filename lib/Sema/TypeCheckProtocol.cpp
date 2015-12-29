@@ -1249,7 +1249,7 @@ matchWitness(ConformanceChecker &cc, TypeChecker &tc,
     // Open up the type of the requirement. We only truly open 'Self' and
     // its associated types (recursively); inner generic type parameters get
     // mapped to their archetypes directly.
-    DeclContext *reqDC = req->getPotentialGenericDeclContext();
+    DeclContext *reqDC = req->getInnermostDeclContext();
     RequirementTypeOpener reqTypeOpener(*cs, conformance, reqDC);
     std::tie(openedFullReqType, reqType)
       = cs->getTypeOfMemberReference(model, req,
@@ -1292,7 +1292,7 @@ matchWitness(ConformanceChecker &cc, TypeChecker &tc,
 
     if (openedFullWitnessType->hasTypeVariable()) {
       // Figure out the context we're substituting into.
-      auto witnessDC = witness->getPotentialGenericDeclContext();
+      auto witnessDC = witness->getInnermostDeclContext();
       
       // Compute the set of substitutions we'll need for the witness.
       solution->computeSubstitutions(witness->getInterfaceType(),
@@ -1399,7 +1399,7 @@ static Type getRequirementTypeForDisplay(TypeChecker &tc, Module *module,
       }
     }
 
-    // Replace 'Self' with the conforming type type.
+    // Replace 'Self' with the conforming type.
     if (type->isEqual(selfTy))
       return conformance->getType();
 
@@ -2263,7 +2263,7 @@ ConformanceChecker::resolveWitnessViaLookup(ValueDecl *requirement) {
             });
         }
 
-        // An non-failable initializer requirement cannot be satisfied
+        // A non-failable initializer requirement cannot be satisfied
         // by a failable initializer.
         if (ctor->getFailability() == OTK_None) {
           switch (witnessCtor->getFailability()) {
@@ -2922,9 +2922,9 @@ void ConformanceChecker::resolveTypeWitnesses() {
   // Track when we are checking type witnesses.
   ProtocolConformanceState initialState = Conformance->getState();
   Conformance->setState(ProtocolConformanceState::CheckingTypeWitnesses);
-  defer([&] {
+  defer {
     Conformance->setState(initialState);
-  });
+  };
 
   for (auto member : Proto->getMembers()) {
     auto assocType = dyn_cast<AssociatedTypeDecl>(member);
@@ -3036,7 +3036,7 @@ void ConformanceChecker::resolveTypeWitnesses() {
     if (Adoptee->is<ErrorType>())
       return Type();
 
-    // UnresolvedTypes propagated their unresolveness to any witnesses.
+    // UnresolvedTypes propagated their unresolvedness to any witnesses.
     if (Adoptee->is<UnresolvedType>())
       return Adoptee;
 
@@ -3251,11 +3251,11 @@ void ConformanceChecker::resolveTypeWitnesses() {
       valueWitnesses.push_back({inferredReq.first, witnessReq.Witness});
       if (witnessReq.Witness->getDeclContext()->isProtocolExtensionContext())
         ++numValueWitnessesInProtocolExtensions;
-      defer([&]{
+      defer {
         if (witnessReq.Witness->getDeclContext()->isProtocolExtensionContext())
           --numValueWitnessesInProtocolExtensions;
         valueWitnesses.pop_back();
-      });
+      };
 
       // Introduce each of the type witnesses into the hash table.
       bool failed = false;
@@ -3450,7 +3450,7 @@ void ConformanceChecker::resolveTypeWitnesses() {
                                 NormalProtocolConformance *conformance) {
           auto proto = conformance->getProtocol();
           tc.diagnose(failedDefaultedAssocType,
-                      diag::default_assocated_type_req_fail,
+                      diag::default_associated_type_req_fail,
                       failedDefaultedWitness,
                       failedDefaultedAssocType->getFullName(),
                       proto->getDeclaredType(),
@@ -3635,7 +3635,7 @@ void ConformanceChecker::resolveSingleWitness(ValueDecl *requirement) {
   // Note that we're resolving this witness.
   assert(ResolvingWitnesses.count(requirement) == 0 && "Currently resolving");
   ResolvingWitnesses.insert(requirement);
-  defer([&]{ ResolvingWitnesses.erase(requirement); });
+  defer { ResolvingWitnesses.erase(requirement); };
 
   // Make sure we've validated the requirement.
   if (!requirement->hasType())
@@ -3732,7 +3732,7 @@ void ConformanceChecker::checkConformance() {
   }
 
   // Ensure that all of the requirements of the protocol have been satisfied.
-  // Note: the odd check for one generic parameter parameter copes with
+  // Note: the odd check for one generic parameter copes with
   // protocols nested within other generic contexts, which is ill-formed.
   SourceLoc noteLoc = Proto->getLoc();
   if (noteLoc.isInvalid())
@@ -3934,7 +3934,7 @@ checkConformsToProtocol(TypeChecker &TC,
 
   // Note that we are checking this conformance now.
   conformance->setState(ProtocolConformanceState::Checking);
-  defer([&] { conformance->setState(ProtocolConformanceState::Complete); });
+  defer { conformance->setState(ProtocolConformanceState::Complete); };
 
   // If the protocol requires a class, non-classes are a non-starter.
   if (Proto->requiresClass() && !canT->getClassOrBoundGenericClass()) {
@@ -4198,6 +4198,11 @@ bool TypeChecker::isProtocolExtensionUsable(DeclContext *dc, Type type,
   if (!protocolExtension->isConstrainedExtension())
     return true;
 
+  // If the type still has parameters, the constrained extension is considered
+  // unusable.
+  if (type->hasTypeParameter())
+    return false;
+
   // Set up a constraint system where we open the generic parameters of the
   // protocol extension.
   ConstraintSystem cs(*this, dc, None);
@@ -4205,8 +4210,10 @@ bool TypeChecker::isProtocolExtensionUsable(DeclContext *dc, Type type,
   auto genericSig = protocolExtension->getGenericSignature();
   
   cs.openGeneric(protocolExtension, genericSig->getGenericParams(),
-                 genericSig->getRequirements(), false, nullptr,
-                 ConstraintLocatorBuilder(nullptr), replacements);
+                 genericSig->getRequirements(), false,
+                 protocolExtension->getGenericTypeContextDepth(),
+                 nullptr, ConstraintLocatorBuilder(nullptr),
+                 replacements);
 
   // Bind the 'Self' type variable to the provided type.
   CanType selfType = genericSig->getGenericParams().back()->getCanonicalType();

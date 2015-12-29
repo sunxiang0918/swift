@@ -204,7 +204,7 @@ public:
   /// Emit the protocol conformance records needed by each IR module.
   void emitProtocolConformances();
 
-  /// Emit everthing which is reachable from already emitted IR.
+  /// Emit everything which is reachable from already emitted IR.
   void emitLazyDefinitions();
   
   void addLazyFunction(SILFunction *f) {
@@ -351,6 +351,7 @@ public:
   llvm::StructType *RefCountedStructTy;/// %swift.refcounted = type { ... }
   llvm::PointerType *RefCountedPtrTy;  /// %swift.refcounted*
   llvm::PointerType *WeakReferencePtrTy;/// %swift.weak_reference*
+  llvm::PointerType *UnownedReferencePtrTy;/// %swift.unowned_reference*
   llvm::Constant *RefCountedNull;      /// %swift.refcounted* null
   llvm::StructType *FunctionPairTy;    /// { i8*, %swift.refcounted* }
   llvm::FunctionType *DeallocatingDtorTy; /// void (%swift.refcounted*)
@@ -407,18 +408,40 @@ public:
     return getPointerAlignment();
   }
 
-  llvm::Type *getReferenceType(ReferenceCounting refcounting);
+  llvm::Type *getReferenceType(ReferenceCounting style);
+
+  static bool isUnownedReferenceAddressOnly(ReferenceCounting style) {
+    switch (style) {
+    case ReferenceCounting::Native:
+      return false;
+
+    case ReferenceCounting::Unknown:
+    case ReferenceCounting::ObjC:
+    case ReferenceCounting::Block:
+      return true;
+
+    case ReferenceCounting::Bridge:
+    case ReferenceCounting::Error:
+      llvm_unreachable("unowned references to this type are not supported");
+    }
+  }
   
   /// Return the spare bit mask to use for types that comprise heap object
   /// pointers.
   const SpareBitVector &getHeapObjectSpareBits() const;
 
   const SpareBitVector &getFunctionPointerSpareBits() const;
-  SpareBitVector getWeakReferenceSpareBits() const;
   const SpareBitVector &getWitnessTablePtrSpareBits() const;
 
+  SpareBitVector getWeakReferenceSpareBits() const;
   Size getWeakReferenceSize() const { return PtrSize; }
   Alignment getWeakReferenceAlignment() const { return getPointerAlignment(); }
+
+  SpareBitVector getUnownedReferenceSpareBits(ReferenceCounting style) const;
+  unsigned getUnownedExtraInhabitantCount(ReferenceCounting style);
+  APInt getUnownedExtraInhabitantValue(unsigned bits, unsigned index,
+                                       ReferenceCounting syle);
+  APInt getUnownedExtraInhabitantMask(ReferenceCounting style);
 
   llvm::Type *getFixedBufferTy();
   llvm::Type *getValueWitnessTy(ValueWitness index);
@@ -481,6 +504,8 @@ public:
   }
 
   bool isResilient(Decl *decl, ResilienceScope scope);
+  ResilienceScope getResilienceScopeForAccess(NominalTypeDecl *decl);
+  ResilienceScope getResilienceScopeForLayout(NominalTypeDecl *decl);
 
   SpareBitVector getSpareBitsForType(llvm::Type *scalarTy, Size size);
   
@@ -617,11 +642,14 @@ public:                             \
 private:                            \
   llvm::Constant *Id##Fn = nullptr;
 #include "RuntimeFunctions.def"
+  
+  llvm::Constant *FixLifetimeFn = nullptr;
 
   mutable Optional<SpareBitVector> HeapPointerSpareBits;
   
 //--- Generic ---------------------------------------------------------------
 public:
+  llvm::Constant *getFixLifetimeFn();
   
   /// The constructor.
   ///

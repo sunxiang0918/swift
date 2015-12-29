@@ -62,7 +62,7 @@ func recover_missing_body_2() // expected-error {{expected '{' in body of functi
 // should produce the error about missing right paren.
 //
 // FIXME: The errors are awful.  We should produce just the error about paren.
-func f_recover_missing_tuple_paren(a: Int // expected-error {{expected parameter type following ':'}} expected-note {{to match this opening '('}} expected-error{{expected '{' in body of function declaration}} expected-error {{expected ')' in parameter}} expected-error 2{{expected ',' separator}} {{42-42=,}} {{42-42=,}}
+func f_recover_missing_tuple_paren(a: Int // expected-note {{to match this opening '('}} expected-error{{expected '{' in body of function declaration}} expected-error {{expected ')' in parameter}} 
 func g_recover_missing_tuple_paren(b: Int) {
 }
 
@@ -121,10 +121,8 @@ func testObjCMethodCurry(a : ClassWithObjCMethod) -> (Int) -> () {
 }
 
 // We used to crash on this.
-func rdar16786220(var let c: Int) -> () { // expected-error {{Use of 'var' binding here is not allowed}} {{19-22=}} expected-error {{parameter may not have multiple 'inout', 'var', or 'let' specifiers}}
-  var c = c
+func rdar16786220(var let c: Int) -> () { // expected-warning {{Use of 'var' binding here is deprecated and will be removed in a future version of Swift}} {{19-22=}} expected-error {{parameter may not have multiple 'inout', 'var', or 'let' specifiers}}
   c = 42
-  _ = c
 }
 
 
@@ -138,11 +136,9 @@ func !!!<T>(lhs: UnsafePointer<T>, rhs: UnsafePointer<T>) -> Bool { return false
 
 // <rdar://problem/16786168> Functions currently permit 'var inout' parameters
 func inout_inout_error(inout inout x : Int) {} // expected-error {{parameter may not have multiple 'inout', 'var', or 'let' specifiers}} {{30-36=}}
-// expected-error@+1 {{Use of 'var' binding here is not allowed}} {{22-25=}}
+// expected-warning@+1 {{Use of 'var' binding here is deprecated and will be removed in a future version of Swift}} {{22-25=}}
 func var_inout_error(var inout x : Int) { // expected-error {{parameter may not have multiple 'inout', 'var', or 'let' specifiers}} {{26-32=}}
-  var x = x
   x = 2
-  _ = x
 }
 
 // Unnamed parameters require the name "_":

@@ -1159,6 +1159,115 @@ bool Parser::parseNewDeclAttribute(DeclAttributes &Attributes, SourceLoc AtLoc,
                                                       rParenLoc, false));
     break;
     }
+
+  case DAK_MigrationId: {
+    if (Tok.isNot(tok::l_paren)) {
+      diagnose(Loc, diag::attr_expected_lparen, AttrName,
+               DeclAttribute::isDeclModifier(DK));
+      return false;
+    }
+
+    StringRef ident;
+    StringRef patternId;
+    SourceLoc lParenLoc = consumeToken();
+
+    // If we don't have a string, complain.
+    if (Tok.isNot(tok::string_literal)) {
+      diagnose(Tok, diag::attr_expected_string_literal, AttrName);
+      if (Tok.isNot(tok::r_paren))
+        skipUntil(tok::r_paren);
+      consumeIf(tok::r_paren);
+      return false;
+    }
+
+    // Dig out the string.
+    auto string = getStringLiteralIfNotInterpolated(*this, Loc, Tok,
+                                                    AttrName);
+    consumeToken(tok::string_literal);
+    if (!string)
+      return false;
+    ident = string.getValue();
+    consumeIf(tok::comma);
+
+    bool invalid = false;
+    do {
+      // If we see a closing parenthesis,
+      if (Tok.is(tok::r_paren))
+        break;
+
+      if (Tok.isNot(tok::identifier)) {
+        diagnose(Tok, diag::attr_migration_id_expected_name);
+        if (Tok.isNot(tok::r_paren))
+          skipUntil(tok::r_paren);
+        consumeIf(tok::r_paren);
+        invalid = true;
+        break;
+      }
+
+      // Consume the identifier.
+      StringRef name = Tok.getText();
+      SourceLoc nameLoc = consumeToken();
+      bool known = (name == "pattern");
+
+      // If we don't have the '=', complain.
+      SourceLoc equalLoc;
+      if (!consumeIf(tok::equal, equalLoc)) {
+        if (known)
+          diagnose(Tok, diag::attr_migration_id_expected_eq, name);
+        else
+          diagnose(Tok, diag::attr_migration_id_unknown_parameter, name);
+        continue;
+      }
+
+
+      // If we don't have a string, complain.
+      if (Tok.isNot(tok::string_literal)) {
+        diagnose(Tok, diag::attr_migration_id_expected_string, name);
+        if (Tok.isNot(tok::r_paren))
+          skipUntil(tok::r_paren);
+        consumeIf(tok::r_paren);
+        invalid = true;
+        break;
+      }
+
+      // Dig out the string.
+      auto param_string = getStringLiteralIfNotInterpolated(*this, nameLoc, Tok,
+                                                            name.str());
+      consumeToken(tok::string_literal);
+      if (!param_string) {
+        continue;
+      }
+
+      if (!known) {
+        diagnose(nameLoc, diag::attr_migration_id_unknown_parameter,
+                 name);
+        continue;
+      }
+
+      if (!patternId.empty()) {
+        diagnose(nameLoc, diag::attr_migration_id_duplicate_parameter,
+                 name);
+      }
+
+      patternId = param_string.getValue();
+    } while (consumeIf(tok::comma));
+
+    // Parse the closing ')'.
+    SourceLoc rParenLoc;
+    if (Tok.isNot(tok::r_paren)) {
+      parseMatchingToken(tok::r_paren, rParenLoc,
+                         diag::attr_migration_id_expected_rparen,
+                         lParenLoc);
+    }
+    if (Tok.is(tok::r_paren)) {
+      rParenLoc = consumeToken();
+    }
+
+    Attributes.add(new (Context) MigrationIdAttr(AtLoc, Loc, lParenLoc,
+                                                 ident, patternId,
+                                                 rParenLoc, false));
+    break;
+    }
   }
 
   if (DuplicateAttribute) {
@@ -2086,7 +2195,7 @@ void Parser::parseDeclDelayed() {
   // Ensure that we restore the parser state at exit.
   ParserPositionRAII PPR(*this);
 
-  // Create a lexer that can not go past the end state.
+  // Create a lexer that cannot go past the end state.
   Lexer LocalLex(*L, BeginParserPosition.LS, EndLexerState);
 
   // Temporarily swap out the parser's current lexer with our new one.
@@ -2176,6 +2285,19 @@ ParserResult<ImportDecl> Parser::parseDeclImport(ParseDeclOptions Flags,
                            diag::expected_identifier_in_decl, "import"))
       return nullptr;
   } while (consumeIf(tok::period));
+
+  if (Tok.is(tok::code_complete)) {
+    // We omit the code completion token if it immediately follows the module
+    // identifiers.
+    auto BufferId = SourceMgr.getCodeCompletionBufferID();
+    auto IdEndOffset = SourceMgr.getLocOffsetInBuffer(ImportPath.back().second,
+      BufferId) + ImportPath.back().first.str().size();
+    auto CCTokenOffset = SourceMgr.getLocOffsetInBuffer(SourceMgr.
+      getCodeCompletionLoc(), BufferId);
+    if (IdEndOffset == CCTokenOffset) {
+      consumeToken();
+    }
+  }
 
   if (Kind != ImportKind::Module && ImportPath.size() == 1) {
     diagnose(ImportPath.front().second, diag::decl_expected_module_name);
@@ -2398,8 +2520,8 @@ Parser::parseDeclExtension(ParseDeclOptions Flags, DeclAttributes &Attributes) {
 
       return parseDecl(MemberDecls, Options);
     });
-    // Don't propagate the code completion bit from members: we can not help
-    // code completion inside a member decl, and our callers can not do
+    // Don't propagate the code completion bit from members: we cannot help
+    // code completion inside a member decl, and our callers cannot do
     // anything about it either.  But propagate the error bit.
     if (BodyStatus.isError())
       status.setIsParseError();
@@ -2834,7 +2956,7 @@ static TypedPattern *
 parseOptionalAccessorArgument(SourceLoc SpecifierLoc, TypeLoc ElementTy,
                               Parser &P, AccessorKind Kind) {
   // 'set' and 'willSet' have a (value) parameter, 'didSet' takes an (oldValue)
-  // paramter and 'get' and always takes a () parameter.
+  // parameter and 'get' and always takes a () parameter.
   if (Kind != AccessorKind::IsSetter && Kind != AccessorKind::IsWillSet &&
       Kind != AccessorKind::IsDidSet)
     return nullptr;
@@ -3166,7 +3288,7 @@ bool Parser::parseGetSetImpl(ParseDeclOptions Flags, Pattern *Indices,
         Attributes = DeclAttributes();
       }
       if (!IsFirstAccessor) {
-        // Can not have an implicit getter after other accessor.
+        // Cannot have an implicit getter after other accessor.
         diagnose(Tok, diag::expected_accessor_kw);
         skipUntil(tok::r_brace);
         // Don't signal an error since we recovered.
@@ -3297,7 +3419,7 @@ void Parser::parseAccessorBodyDelayed(AbstractFunctionDecl *AFD) {
   // Ensure that we restore the parser state at exit.
   ParserPositionRAII PPR(*this);
 
-  // Create a lexer that can not go past the end state.
+  // Create a lexer that cannot go past the end state.
   Lexer LocalLex(*L, BeginParserPosition.LS, EndLexerState);
 
   // Temporarily swap out the parser's current lexer with our new one.
@@ -3643,7 +3765,7 @@ ParserStatus Parser::parseDeclVar(ParseDeclOptions Flags,
 
   // No matter what error path we take, make sure the
   // PatternBindingDecl/TopLevel code block are added.
-  defer([&]{
+  defer {
     // If we didn't parse any patterns, don't create the pattern binding decl.
     if (PBDEntries.empty())
       return;
@@ -3683,7 +3805,7 @@ ParserStatus Parser::parseDeclVar(ParseDeclOptions Flags,
     // specific spot to get it in before any accessors, which SILGen seems to
     // want.
     Decls.insert(Decls.begin()+NumDeclsInResult, PBD);
-  });
+  };
 
   do {
     Pattern *pattern;
@@ -4098,7 +4220,7 @@ bool Parser::parseAbstractFunctionBodyDelayed(AbstractFunctionDecl *AFD) {
   // Ensure that we restore the parser state at exit.
   ParserPositionRAII PPR(*this);
 
-  // Create a lexer that can not go past the end state.
+  // Create a lexer that cannot go past the end state.
   Lexer LocalLex(*L, BeginParserPosition.LS, EndLexerState);
 
   // Temporarily swap out the parser's current lexer with our new one.
@@ -4236,6 +4358,7 @@ ParserStatus Parser::parseDeclEnumCase(ParseDeclOptions Flags,
       // Handle the likely case someone typed 'case X, case Y'.
       if (Tok.is(tok::kw_case) && CommaLoc.isValid()) {
         diagnose(Tok, diag::expected_identifier_after_case_comma);
+        Status.setIsParseError();
         return Status;
       }
       
@@ -4717,7 +4840,11 @@ ParserStatus Parser::parseDeclSubscript(ParseDeclOptions Flags,
   if (Tok.isNot(tok::l_brace))  {
     // Subscript declarations must always have at least a getter, so they need
     // to be followed by a {.
-    diagnose(Tok, diag::expected_lbrace_subscript);
+    if (Flags.contains(PD_InProtocol))
+      diagnose(Tok, diag::expected_lbrace_subscript_protocol)
+        .fixItInsertAfter(ElementTy.get()->getEndLoc(), " { get set }");
+    else
+      diagnose(Tok, diag::expected_lbrace_subscript);
     Status.setIsParseError();
   } else {
     if (parseGetSet(Flags, Indices.get(), ElementTy.get(),
@@ -4937,7 +5064,23 @@ Parser::parseDeclOperator(ParseDeclOptions Flags, DeclAttributes &Attributes) {
   bool AllowTopLevel = Flags.contains(PD_AllowTopLevel);
 
   if (!Tok.isAnyOperator() && !Tok.is(tok::exclaim_postfix)) {
-    diagnose(Tok, diag::expected_operator_name_after_operator);
+    // A common error is to try to define an operator with something in the
+    // unicode plane considered to be an operator, or to try to define an
+    // operator like "not".  Diagnose this specifically.
+    if (Tok.is(tok::identifier))
+      diagnose(Tok, diag::identifier_when_expecting_operator,
+               Context.getIdentifier(Tok.getText()));
+    else
+      diagnose(Tok, diag::expected_operator_name_after_operator);
+
+    // To improve recovery, check to see if we have a { right after this token.
+    // If so, swallow until the end } to avoid tripping over the body of the
+    // malformed operator decl.
+    if (peekToken().is(tok::l_brace)) {
+      consumeToken();
+      skipSingle();
+    }
+
     return nullptr;
   }
 

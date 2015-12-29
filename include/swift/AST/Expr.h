@@ -19,15 +19,8 @@
 
 #include "swift/AST/CaptureInfo.h"
 #include "swift/AST/ConcreteDeclRef.h"
-#include "swift/AST/DeclContext.h"
-#include "swift/AST/Identifier.h"
-#include "swift/AST/Substitution.h"
 #include "swift/AST/TypeLoc.h"
 #include "swift/AST/Availability.h"
-#include "swift/Basic/SourceLoc.h"
-#include "swift/Config.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/StringRef.h"
 
 namespace llvm {
   struct fltSemantics;
@@ -930,9 +923,6 @@ public:
       return Spec->D;
     return DOrSpecialized.get<ConcreteDeclRef>();
   }
-
-  /// Set the declaration.
-  void setDeclRef(ConcreteDeclRef ref);
 
   void setSpecialized();
 
@@ -3051,7 +3041,7 @@ public:
 
 
 /// \brief This is a closure of the contained subexpression that is formed
-/// when an scalar expression is converted to @autoclosure function type.
+/// when a scalar expression is converted to @autoclosure function type.
 /// For example:
 /// \code
 ///   @autoclosure var x : () -> Int = 4
@@ -3097,7 +3087,7 @@ public:
 
 /// DynamicTypeExpr - "base.dynamicType" - Produces a metatype value.
 ///
-/// The metatype value can comes from a evaluating an expression and then
+/// The metatype value can comes from evaluating an expression and then
 /// getting its metatype.
 class DynamicTypeExpr : public Expr {
   Expr *Base;
@@ -3745,6 +3735,7 @@ class EditorPlaceholderExpr : public Expr {
   SourceLoc Loc;
   TypeLoc PlaceholderTy;
   TypeRepr *ExpansionTyR;
+  Expr *SemanticExpr;
 
 public:
   EditorPlaceholderExpr(Identifier Placeholder, SourceLoc Loc,
@@ -3753,7 +3744,8 @@ public:
     : Expr(ExprKind::EditorPlaceholder, /*Implicit=*/false),
       Placeholder(Placeholder), Loc(Loc),
       PlaceholderTy(PlaceholderTy),
-      ExpansionTyR(ExpansionTyR) {
+      ExpansionTyR(ExpansionTyR),
+      SemanticExpr(nullptr) {
   }
 
   Identifier getPlaceholder() const { return Placeholder; }
@@ -3767,6 +3759,9 @@ public:
   static bool classof(const Expr *E) {
     return E->getKind() == ExprKind::EditorPlaceholder;
   }
+
+  Expr *getSemanticExpr() const { return SemanticExpr; }
+  void setSemanticExpr(Expr *SE) { SemanticExpr = SE; }
 };
 
 #undef SWIFT_FORWARD_SOURCE_LOCS_TO

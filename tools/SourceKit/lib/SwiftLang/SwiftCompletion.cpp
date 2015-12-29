@@ -167,7 +167,7 @@ static bool swiftCodeCompleteImpl(SwiftLangSupport &Lang,
   auto swiftCache = Lang.getCodeCompletionCache(); // Pin the cache.
   ide::CodeCompletionContext CompletionContext(swiftCache->getCache());
 
-  // Cerate a factory for code completion callbacks that will feed the
+  // Create a factory for code completion callbacks that will feed the
   // Consumer.
   std::unique_ptr<CodeCompletionCallbacksFactory> CompletionCallbacksFactory(
       ide::makeCodeCompletionCallbacksFactory(CompletionContext,
@@ -450,7 +450,7 @@ bool SwiftToSourceKitCompletionAdapter::handleResult(
       llvm::SmallString<64> LogMessage;
       llvm::raw_svector_ostream LogMessageOs(LogMessage);
 
-      LogMessageOs << "Code cpompletion result with empty name and/or "
+      LogMessageOs << "Code completion result with empty name and/or "
                       "description was ignored: \n";
       Result->print(LogMessageOs);
 

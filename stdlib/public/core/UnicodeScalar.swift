@@ -20,11 +20,7 @@ public struct UnicodeScalar :
   var _value: UInt32
 
   /// A numeric representation of `self`.
-  public var value: UInt32 {
-    get {
-      return _value
-    }
-  }
+  public var value: UInt32 { return _value }
 
   @_transparent
   public init(_builtinUnicodeScalarLiteral value: Builtin.Int32) {
@@ -159,7 +155,7 @@ public struct UnicodeScalar :
     return (self >= "A" && self <= "Z") || (self >= "a" && self <= "z")
   }
 
-  // FIXME: Is there an similar term of art in Unicode?
+  // FIXME: Is there a similar term of art in Unicode?
   @warn_unused_result
   public func _isASCIIDigit() -> Bool {
     return self >= "0" && self <= "9"

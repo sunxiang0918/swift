@@ -19,6 +19,7 @@
 #include "swift/AST/NameLookup.h"
 #include "swift/AST/PrettyStackTrace.h"
 #include "swift/AST/ResilienceExpansion.h"
+#include "swift/Basic/Timer.h"
 #include "swift/ClangImporter/ClangModule.h"
 #include "swift/Serialization/SerializedModuleLoader.h"
 #include "swift/Serialization/SerializedSILLoader.h"
@@ -210,10 +211,10 @@ SILFunction *SILGenModule::emitTopLevelFunction(SILLocation Loc) {
                                    None,
                                    C);
 
-  return SILFunction::create(M, SILLinkage::Public,
-                             SWIFT_ENTRY_POINT_FUNCTION, topLevelType, nullptr,
-                             Loc, IsBare, IsNotTransparent, IsNotFragile,
-                             IsNotThunk, SILFunction::NotRelevant);
+  return M.getOrCreateFunction(SILLinkage::Public, SWIFT_ENTRY_POINT_FUNCTION,
+                               topLevelType, nullptr, Loc, IsBare,
+                               IsNotTransparent, IsNotFragile, IsNotThunk,
+                               SILFunction::NotRelevant);
 }
 
 SILType SILGenModule::getConstantType(SILDeclRef constant) {
@@ -552,13 +553,14 @@ void SILGenModule::emitConstructor(ConstructorDecl *decl) {
 }
 
 void SILGenModule::emitEnumConstructor(EnumElementDecl *decl) {
+  // Enum element constructors are always emitted by need, so don't need
+  // delayed emission.
   SILDeclRef constant(decl);
-  emitOrDelayFunction(*this, constant, [this,constant,decl](SILFunction *f) {
-    preEmitFunction(constant, decl, f, decl);
-    PrettyStackTraceSILFunction X("silgen enum constructor", f);
-    SILGenFunction(*this, *f).emitEnumConstructor(decl);
-    postEmitFunction(constant, f);
-  });
+  SILFunction *f = getFunction(constant, ForDefinition);
+  preEmitFunction(constant, decl, f, decl);
+  PrettyStackTraceSILFunction X("silgen enum constructor", f);
+  SILGenFunction(*this, *f).emitEnumConstructor(decl);
+  postEmitFunction(constant, f);
 }
 
 SILFunction *SILGenModule::emitClosure(AbstractClosureExpr *ce) {
@@ -723,10 +725,9 @@ SILFunction *SILGenModule::emitLazyGlobalInitializer(StringRef funcName,
   auto initSILType = getLoweredType(initType).castTo<SILFunctionType>();
 
   auto *f =
-    SILFunction::create(M, SILLinkage::Private, funcName,
-                        initSILType, nullptr, SILLocation(binding),
-                        IsNotBare, IsNotTransparent,
-                        makeModuleFragile ? IsFragile : IsNotFragile);
+      M.getOrCreateFunction(SILLinkage::Private, funcName, initSILType, nullptr,
+                            SILLocation(binding), IsNotBare, IsNotTransparent,
+                            makeModuleFragile ? IsFragile : IsNotFragile);
   f->setDebugScope(new (M)
                    SILDebugScope(RegularLocation(binding->getInit(pbdEntry)),
                                  *f));
@@ -1153,6 +1154,7 @@ std::unique_ptr<SILModule>
 SILModule::constructSIL(Module *mod, SILOptions &options, FileUnit *SF,
                         Optional<unsigned> startElem, bool makeModuleFragile,
                         bool isWholeModule) {
+  SharedTimer timer("SILGen");
   const DeclContext *DC;
   if (startElem) {
     assert(SF && "cannot have a start element without a source file");

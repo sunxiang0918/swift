@@ -15,7 +15,7 @@
 //  statically.
 //
 //  These classes are useful only for creating TypeInfo
-//  implementations; unlike the similiarly-named FixedTypeInfo, they
+//  implementations; unlike the similarly-named FixedTypeInfo, they
 //  do not provide a supplemental API.
 //
 //===----------------------------------------------------------------------===//
@@ -62,6 +62,7 @@ public:
                                  const llvm::Twine &name) const override {
     // Make a fixed-size buffer.
     Address buffer = IGF.createFixedSizeBufferAlloca(name);
+    IGF.Builder.CreateLifetimeStart(buffer, getFixedBufferSize(IGF.IGM));
 
     // Allocate an object of the appropriate type within it.
     llvm::Value *address = emitAllocateBufferCall(IGF, T, buffer);
@@ -71,6 +72,7 @@ public:
   void deallocateStack(IRGenFunction &IGF, Address buffer,
                        SILType T) const override {
     emitDeallocateBufferCall(IGF, T, buffer);
+    IGF.Builder.CreateLifetimeEnd(buffer, getFixedBufferSize(IGF.IGM));
   }
 
   llvm::Value *getValueWitnessTable(IRGenFunction &IGF, SILType T) const {

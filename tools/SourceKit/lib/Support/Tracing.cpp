@@ -30,7 +30,7 @@ static std::atomic<bool> tracing_enabled(false);
 static std::atomic<uint64_t> operation_id(0);
 
 //----------------------------------------------------------------------------//
-// Copnsumers
+// Consumers
 //----------------------------------------------------------------------------//
 struct TraceConsumerListNode {
   trace::TraceConsumer *const Consumer;
@@ -57,14 +57,14 @@ void trace::disable() {
 }
 
 // Trace start of perform sema call, returns OpId
-uint64_t trace::startOpertation(trace::OperationKind OpKind,
-                                const trace::SwiftInvocation &Inv,
-                                const trace::StringPairs &OpArgs) {
+uint64_t trace::startOperation(trace::OperationKind OpKind,
+                               const trace::SwiftInvocation &Inv,
+                               const trace::StringPairs &OpArgs) {
   auto OpId = ++operation_id;
   if (trace::enabled()) {
     auto Node = consumers.load(std::memory_order_acquire);
     while (Node) {
-      Node->Consumer->opertationStarted(OpId, OpKind, Inv, OpArgs);
+      Node->Consumer->operationStarted(OpId, OpKind, Inv, OpArgs);
       Node = Node->Next;
     }
   }

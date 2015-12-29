@@ -770,6 +770,7 @@ Globals
   funcsigspecializationarginfo ::= 'd'                                           // Dead argument
   funcsigspecializationarginfo ::= 'g' 's'?                                      // Owned => Guaranteed and Exploded if 's' present.
   funcsigspecializationarginfo ::= 's'                                           // Exploded
+  funcsigspecializationarginfo ::= 'k'                                           // Exploded
   funcsigspecializationconstantpropinfo ::= 'fr' mangled-name
   funcsigspecializationconstantpropinfo ::= 'g' mangled-name
   funcsigspecializationconstantpropinfo ::= 'i' 64-bit-integer
@@ -938,6 +939,7 @@ Types
   nominal-type-kind ::= 'C'                  // class
   nominal-type-kind ::= 'O'                  // enum
   nominal-type-kind ::= 'V'                  // struct
+  declaration-name ::= context decl-name
   archetype ::= 'Q' index                    // archetype with depth=0, idx=N
   archetype ::= 'Qd' index index             // archetype with depth=M+1, idx=N
   archetype ::= associated-type
@@ -1088,6 +1090,7 @@ TODO: document these
   value-witness-kind ::= 'tT'           // initializeArrayWithTakeBackToFront
   value-witness-kind ::= 'ug'           // getEnumTag
   value-witness-kind ::= 'up'           // destructiveProjectEnumData
+  value-witness-kind ::= 'ui'           // destructiveInjectEnumTag
 
 ``<value-witness-kind>`` differentiates the kinds of value
 witness functions for a type.
@@ -1173,12 +1176,12 @@ for the first time. The first argument type will mangle in long form,
 ``CC3zim4zang4zung``, and in doing so, ``zim`` will acquire substitution ``S_``,
 ``zim.zang`` will acquire substitution ``S0_``, and ``zim.zang.zung`` will
 acquire ``S1_``. The second argument is the same as the first and will mangle
-using its substitution, ``CS1_``. The
+using its substitution, ``S1_``. The
 third argument type will mangle using the substitution for ``zim``,
 ``CS_7zippity``. (It also acquires substitution ``S2_`` which would be used
 if it mangled again.) The result type will mangle using the substitution for
-``zim.zang``, ``CS0_zoo`` (and acquire substitution ``S3_``). The full
-function type thus mangles as ``fTCC3zim4zang4zungCS1_CS_7zippity_CS0_zoo``.
+``zim.zang``, ``CS0_3zoo`` (and acquire substitution ``S3_``). The full
+function type thus mangles as ``fTCC3zim4zang4zungS1_CS_7zippity_CS0_3zoo``.
 
 ::
 

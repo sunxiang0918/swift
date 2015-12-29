@@ -49,7 +49,7 @@ public:
 
   /// Construct a successful parser result.
   explicit ParserResult(T *Result) : PtrAndBits(Result) {
-    assert(Result && "a successful parser result can not be null");
+    assert(Result && "a successful parser result cannot be null");
   }
 
   /// Convert from a different but compatible parser result.
@@ -125,8 +125,8 @@ static inline ParserResult<T> makeParserCodeCompletionResult(T *Result =
 /// \brief Same as \c ParserResult, but just the status bits without the AST
 /// node.
 ///
-/// Useful when the AST node is returned by some other means (for example, a in
-/// vector out parameter).
+/// Useful when the AST node is returned by some other means (for example, in
+/// a vector out parameter).
 ///
 /// If you want to use 'bool' as a result type in the Parser, consider using
 /// ParserStatus instead.

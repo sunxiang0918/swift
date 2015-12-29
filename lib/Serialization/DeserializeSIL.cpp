@@ -293,11 +293,10 @@ static SILFunction *createBogusSILFunction(SILModule &M,
                                            StringRef name,
                                            SILType type) {
   SourceLoc loc;
-  return SILFunction::create(M, SILLinkage::Private, name,
-                             type.castTo<SILFunctionType>(),
-                             nullptr, SILFileLocation(loc), IsNotBare,
-                             IsNotTransparent, IsNotFragile, IsNotThunk,
-                             SILFunction::NotRelevant);
+  return M.getOrCreateFunction(
+      SILLinkage::Private, name, type.castTo<SILFunctionType>(), nullptr,
+      SILFileLocation(loc), IsNotBare, IsNotTransparent, IsNotFragile,
+      IsNotThunk, SILFunction::NotRelevant);
 }
 
 /// Helper function to find a SILFunction, given its name and type.
@@ -336,7 +335,7 @@ SILFunction *SILDeserializer::getFuncForReference(StringRef name) {
 }
 
 /// Helper function to find a SILGlobalVariable given its name. It first checks
-/// in the module. If we can not find it in the module, we attempt to
+/// in the module. If we cannot find it in the module, we attempt to
 /// deserialize it.
 SILGlobalVariable *SILDeserializer::getGlobalForReference(StringRef name) {
   // Check to see if we have a global by this name already.
@@ -435,13 +434,11 @@ SILFunction *SILDeserializer::readSILFunction(DeclID FID,
 
   // Otherwise, create a new function.
   } else {
-    fn = SILFunction::create(SILMod, linkage.getValue(), name,
-                             ty.castTo<SILFunctionType>(),
-                             nullptr, loc,
-                             IsNotBare, IsTransparent_t(isTransparent == 1),
-                             IsFragile_t(isFragile == 1),
-                             IsThunk_t(isThunk), SILFunction::NotRelevant,
-                             (Inline_t)inlineStrategy);
+    fn = SILMod.getOrCreateFunction(
+        linkage.getValue(), name, ty.castTo<SILFunctionType>(), nullptr, loc,
+        IsNotBare, IsTransparent_t(isTransparent == 1),
+        IsFragile_t(isFragile == 1), IsThunk_t(isThunk),
+        SILFunction::NotRelevant, (Inline_t)inlineStrategy);
     fn->setGlobalInit(isGlobal == 1);
     fn->setEffectsKind((EffectsKind)effect);
     if (SemanticsID)
@@ -538,7 +535,7 @@ SILFunction *SILDeserializer::readSILFunction(DeclID FID,
       // If CurrentBB is empty, just return fn. The code in readSILInstruction
       // assumes that such a situation means that fn is a declaration. Thus it
       // is using return false to mean two different things, error a failure
-      // occured and this is a declaration. Work around that for now.
+      // occurred and this is a declaration. Work around that for now.
       if (!CurrentBB)
         return fn;
 
@@ -1195,8 +1192,6 @@ bool SILDeserializer::readSILInstruction(SILFunction *Fn, SILBasicBlock *BB,
   UNARY_INSTRUCTION(StrongUnpin)
   UNARY_INSTRUCTION(StrongRetain)
   UNARY_INSTRUCTION(StrongRelease)
-  UNARY_INSTRUCTION(StrongRetainAutoreleased)
-  UNARY_INSTRUCTION(AutoreleaseReturn)
   UNARY_INSTRUCTION(StrongRetainUnowned)
   UNARY_INSTRUCTION(UnownedRetain)
   UNARY_INSTRUCTION(UnownedRelease)
@@ -1206,6 +1201,15 @@ bool SILDeserializer::readSILInstruction(SILFunction *Fn, SILBasicBlock *BB,
   UNARY_INSTRUCTION(DebugValueAddr)
 #undef UNARY_INSTRUCTION
 
+  case ValueKind::LoadUnownedInst: {
+    auto Ty = MF->getType(TyID);
+    bool isTake = (Attr > 0);
+    ResultVal = Builder.createLoadUnowned(Loc,
+        getLocalValue(ValID, ValResNum,
+                      getSILType(Ty, (SILValueCategory)TyCategory)),
+        IsTake_t(isTake));
+    break;
+  }
   case ValueKind::LoadWeakInst: {
     auto Ty = MF->getType(TyID);
     bool isTake = (Attr > 0);
@@ -1229,6 +1233,18 @@ bool SILDeserializer::readSILInstruction(SILFunction *Fn, SILBasicBlock *BB,
     ResultVal = Builder.createStore(Loc,
                     getLocalValue(ValID, ValResNum, ValType),
                     getLocalValue(ValID2, ValResNum2, addrType));
+    break;
+  }
+  case ValueKind::StoreUnownedInst: {
+    auto Ty = MF->getType(TyID);
+    SILType addrType = getSILType(Ty, (SILValueCategory)TyCategory);
+    auto refType = addrType.getAs<WeakStorageType>();
+    auto ValType = SILType::getPrimitiveObjectType(refType.getReferentType());
+    bool isInit = (Attr > 0);
+    ResultVal = Builder.createStoreUnowned(Loc,
+                    getLocalValue(ValID, ValResNum, ValType),
+                    getLocalValue(ValID2, ValResNum2, addrType),
+                    IsInitialization_t(isInit));
     break;
   }
   case ValueKind::StoreWeakInst: {
@@ -2101,8 +2117,8 @@ void SILDeserializer::getAllWitnessTables() {
 
 SILWitnessTable *
 SILDeserializer::lookupWitnessTable(SILWitnessTable *existingWt) {
-  assert(existingWt && "Can not deserialize a null witness table declaration.");
-  assert(existingWt->isDeclaration() && "Can not deserialize a witness table "
+  assert(existingWt && "Cannot deserialize a null witness table declaration.");
+  assert(existingWt->isDeclaration() && "Cannot deserialize a witness table "
                                         "definition.");
 
   // If we don't have a witness table list, we can't look anything up.

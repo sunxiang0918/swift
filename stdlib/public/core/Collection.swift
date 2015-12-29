@@ -101,8 +101,10 @@ public struct IndexingGenerator<Elements : Indexable>
   ///
   /// - Requires: No preceding call to `self.next()` has returned `nil`.
   public mutating func next() -> Elements._Element? {
-    return _position == _elements.endIndex
-    ? .None : .Some(_elements[_position++])
+    if _position == _elements.endIndex { return nil }
+    let element = _elements[_position]
+    _position._successorInPlace()
+    return element
   }
 
   internal let _elements: Elements
@@ -320,7 +322,8 @@ extension CollectionType {
     var i = self.startIndex
 
     for _ in 0..<count {
-      result.append(try transform(self[i++]))
+      result.append(try transform(self[i]))
+      i = i.successor()
     }
 
     _expectEnd(i, self)
@@ -449,14 +452,14 @@ extension CollectionType {
     while subSequenceEnd != cachedEndIndex {
       if try isSeparator(self[subSequenceEnd]) {
         let didAppend = appendSubsequence(end: subSequenceEnd)
-        ++subSequenceEnd
+        subSequenceEnd._successorInPlace()
         subSequenceStart = subSequenceEnd
         if didAppend && result.count == maxSplit {
           break
         }
         continue
       }
-      ++subSequenceEnd
+      subSequenceEnd._successorInPlace()
     }
 
     if subSequenceStart != cachedEndIndex || allowEmptySlices {
@@ -593,7 +596,8 @@ extension SequenceType
     } else {
       var p = ptr
       for x in self {
-        p++.initialize(x)
+        p.initialize(x)
+        p += 1
       }
       return p
     }
@@ -601,7 +605,7 @@ extension SequenceType
 }
 
 extension CollectionType {
-  public func _preprocessingPass<R>(preprocess: (Self)->R) -> R? {
+  public func _preprocessingPass<R>(@noescape preprocess: (Self) -> R) -> R? {
     return preprocess(self)
   }
 }
@@ -724,16 +728,16 @@ internal func _writeBackMutableSlice<
     newElementIndex != newElementsEndIndex {
 
     self_[selfElementIndex] = slice[newElementIndex]
-    ++selfElementIndex
-    ++newElementIndex
+    selfElementIndex._successorInPlace()
+    newElementIndex._successorInPlace()
   }
 
   _precondition(
     selfElementIndex == selfElementsEndIndex,
-    "Can not replace a slice of a MutableCollectionType with a slice of a larger size")
+    "Cannot replace a slice of a MutableCollectionType with a slice of a larger size")
   _precondition(
     newElementIndex == newElementsEndIndex,
-    "Can not replace a slice of a MutableCollectionType with a slice of a smaller size")
+    "Cannot replace a slice of a MutableCollectionType with a slice of a smaller size")
 }
 
 /// Returns the range of `x`'s valid index values.
@@ -765,8 +769,7 @@ public struct PermutationGenerator<
   ///
   /// - Requires: No preceding call to `self.next()` has returned `nil`.
   public mutating func next() -> Element? {
-    let result = indices.next()
-    return result != nil ? seq[result!] : .None
+    return indices.next().map { seq[$0] }
   }
 
   /// Construct a *generator* over a permutation of `elements` given

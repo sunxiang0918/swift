@@ -784,7 +784,12 @@ private:
         if (!demangleFuncSigSpecializationClosureProp(param))
           return nullptr;
       } else if (Mangled.nextIf("i_")) {
-        auto result = FUNCSIGSPEC_CREATE_PARAM_KIND(InOutToValue);
+        auto result = FUNCSIGSPEC_CREATE_PARAM_KIND(BoxToValue);
+        if (!result)
+          return nullptr;
+        param->addChild(result);
+      } else if (Mangled.nextIf("k_")) {
+        auto result = FUNCSIGSPEC_CREATE_PARAM_KIND(BoxToStack);
         if (!result)
           return nullptr;
         param->addChild(result);
@@ -1878,6 +1883,16 @@ private:
       type_application->addChild(type_list);
       return type_application;
     }
+    if (c == 'X') {
+      if (Mangled.nextIf('b')) {
+        NodePointer type = demangleType();
+        if (!type)
+          return nullptr;
+        NodePointer boxType = NodeFactory::create(Node::Kind::SILBoxType);
+        boxType->addChild(type);
+        return boxType;
+      }
+    }
     if (c == 'K') {
       return demangleFunctionType(Node::Kind::AutoClosureType);
     }
@@ -2326,6 +2341,7 @@ private:
     case Node::Kind::QualifiedArchetype:
     case Node::Kind::ReturnType:
     case Node::Kind::SelfTypeRef:
+    case Node::Kind::SILBoxType:
     case Node::Kind::Structure:
     case Node::Kind::TupleElementName:
     case Node::Kind::Type:
@@ -2634,7 +2650,8 @@ unsigned NodePrinter::printFunctionSigSpecializationParam(NodePointer pointer,
   unsigned V = firstChild->getIndex();
   auto K = FunctionSigSpecializationParamKind(V);
   switch (K) {
-  case FunctionSigSpecializationParamKind::InOutToValue:
+  case FunctionSigSpecializationParamKind::BoxToValue:
+  case FunctionSigSpecializationParamKind::BoxToStack:
     print(pointer->getChild(Idx++));
     return Idx;
   case FunctionSigSpecializationParamKind::ConstantPropFunction:
@@ -3099,8 +3116,11 @@ void NodePrinter::print(NodePointer pointer, bool asContext, bool suppressType) 
       return;
 
     switch (FunctionSigSpecializationParamKind(raw)) {
-    case FunctionSigSpecializationParamKind::InOutToValue:
-      Printer << "Value Promoted from InOut";
+    case FunctionSigSpecializationParamKind::BoxToValue:
+      Printer << "Value Promoted from Box";
+      break;
+    case FunctionSigSpecializationParamKind::BoxToStack:
+      Printer << "Stack Promoted from Box";
       break;
     case FunctionSigSpecializationParamKind::ConstantPropFunction:
       Printer << "Constant Propagated Function";
@@ -3293,6 +3313,12 @@ void NodePrinter::print(NodePointer pointer, bool asContext, bool suppressType) 
   case Node::Kind::ObjCBlock: {
     Printer << "@convention(block) ";
     printFunctionType(pointer);
+    return;
+  }
+  case Node::Kind::SILBoxType: {
+    Printer << "@box ";
+    NodePointer type = pointer->getChild(0);
+    print(type);
     return;
   }
   case Node::Kind::Metatype: {

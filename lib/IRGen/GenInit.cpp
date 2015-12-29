@@ -62,12 +62,14 @@ ContainedAddress FixedTypeInfo::allocateStack(IRGenFunction &IGF, SILType T,
 
   Address alloca =
     IGF.createAlloca(getStorageType(), getFixedAlignment(), name);
-  // TODO: lifetime intrinsics?
-
+  IGF.Builder.CreateLifetimeStart(alloca, getFixedSize());
+  
   return { alloca, alloca };
 }
 
 void FixedTypeInfo::deallocateStack(IRGenFunction &IGF, Address addr,
                                     SILType T) const {
-  // TODO: lifetime intrinsics?
+  if (isKnownEmpty())
+    return;
+  IGF.Builder.CreateLifetimeEnd(addr, getFixedSize());
 }

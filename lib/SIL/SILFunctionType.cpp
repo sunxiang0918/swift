@@ -64,7 +64,7 @@ static CanType getKnownType(Optional<CanType> &cacheSlot, ASTContext &C,
   }
   CanType t = *cacheSlot;
 
-  // It is possible that we won't find a briding type (e.g. String) when we're
+  // It is possible that we won't find a bridging type (e.g. String) when we're
   // parsing the stdlib itself.
   if (t) {
     DEBUG(llvm::dbgs() << "Bridging type " << moduleName << '.' << typeName
@@ -359,6 +359,9 @@ enum class ConventionsKind : uint8_t {
       if (isa<InOutType>(substType)) {
         assert(origType.isOpaque() || origType.getAs<InOutType>());
         convention = ParameterConvention::Indirect_Inout;
+      } else if (isa<LValueType>(substType)) {
+        assert(origType.isOpaque() || origType.getAs<LValueType>());
+        convention = ParameterConvention::Indirect_InoutAliasable;
       } else if (isPassedIndirectly(origType, substType, substTL)) {
         convention = Convs.getIndirectParameter(origParamIndex, origType);
         assert(isIndirectParameter(convention));
@@ -1625,6 +1628,7 @@ namespace {
       case ParameterConvention::Direct_Deallocating:
       case ParameterConvention::Direct_Unowned:
       case ParameterConvention::Indirect_Inout:
+      case ParameterConvention::Indirect_InoutAliasable:
       case ParameterConvention::Indirect_In:
       case ParameterConvention::Indirect_In_Guaranteed:
         return orig;
@@ -1732,7 +1736,7 @@ SILConstantInfo TypeConverter::getConstantOverrideInfo(SILDeclRef derived,
   if (found != ConstantOverrideTypes.end())
     return found->second;
 
-  assert(base.getOverriddenVTableEntry().isNull()
+  assert(base.getNextOverriddenVTableEntry().isNull()
          && "base must not be an override");
 
   auto baseInfo = getConstantInfo(base);

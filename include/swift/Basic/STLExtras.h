@@ -352,7 +352,7 @@ makeTransformRange(Range range, Operation op) {
 }
 
 /// An iterator that filters and transforms the results of an
-/// underlying forward iterator based on an transformation from the underlying
+/// underlying forward iterator based on a transformation from the underlying
 /// value type to an optional result type.
 ///
 /// \tparam Iterator the underlying iterator.
@@ -555,6 +555,21 @@ void sortUnique(
                      std::random_access_iterator_tag>::value,
         void>::type * = nullptr) {
   std::sort(C.begin(), C.end());
+  C.erase(std::unique(C.begin(), C.end()), C.end());
+}
+
+/// Sorts and then uniques a container with random access iterators and an erase
+/// method that removes a range specified by random access iterators.
+template <typename Container, typename Comparator>
+void sortUnique(
+    Container &C,
+    Comparator Cmp,
+    typename std::enable_if<
+        std::is_same<typename std::iterator_traits<
+                         typename Container::iterator>::iterator_category,
+                     std::random_access_iterator_tag>::value,
+        void>::type * = nullptr) {
+  std::sort(C.begin(), C.end(), Cmp);
   C.erase(std::unique(C.begin(), C.end()), C.end());
 }
 
